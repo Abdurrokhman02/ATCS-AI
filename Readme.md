@@ -1,6 +1,3 @@
-Berikut adalah draf `README.md` yang rapi, profesional, dan komprehensif untuk proyek ATCS kamu. Kamu bisa langsung menyalinnya!
-
----
 
 ```markdown
 # 🚦 ATCS Traffic Intelligence - CCTV Monitoring System
@@ -25,7 +22,11 @@ aicctv/
 │
 ├── main.py                        # Entry point aplikasi (Jalankan file ini)
 ├── config.py                      # File pengaturan (Garis kamera, kalibrasi jarak, UI)
-├── cctv_cihaliwung_rekam.mp4      # (Opsional) File video input testing
+
+├── samples/                       # 📁 Folder tempat sample vidio disimpan
+│   ├── sample.mp4                 # Sample vidio malam
+│   ├── samplesiang.mp4            # Sample vidio siang
+│   └── sampleuji.mp4              # Sample vidio malam tapi beda nama
 │
 ├── models/                        # 📁 Folder tempat model AI disimpan
 │   └── yolov8m.pt                 # Akan diunduh otomatis jika belum ada
