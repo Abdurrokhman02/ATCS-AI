@@ -1,0 +1,20 @@
+# =========================
+# Python & Environment
+# =========================
+# Cache dan file kompilasi Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# =========================
+# OS / IDE Files (Opsional tapi disarankan)
+# =========================
+.DS_Store
+.vscode/
+.idea/
