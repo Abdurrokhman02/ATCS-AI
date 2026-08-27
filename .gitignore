@@ -18,3 +18,8 @@ env/
 .DS_Store
 .vscode/
 .idea/
+
+# =========================
+# Hasil kecelakaan raw
+# =========================
+hasil_kecelakaan_raw/
