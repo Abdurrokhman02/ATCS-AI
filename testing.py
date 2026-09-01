@@ -22,7 +22,7 @@ import supervision as sv
 # ==========================================
 CAM_CONFIG = {
     "camera_id": "CCTV_Jalan_01",
-    "video_source": "samplesiang.mp4", # Ganti ke '0' jika pakai webcam langsung
+    "video_source": "./samples/sampleuji.mp4", # Ganti ke '0' jika pakai webcam langsung
     "jarak_garis_meter": 20.0,
     "free_flow_speed_kmh": 40.0,
     "panjang_segmen_meter": 50.0,
@@ -88,10 +88,15 @@ try:
 except TypeError:
     roi_zone = sv.PolygonZone(polygon=MAX_ROI_POLYGON)
 
+# Output video hasil deteksi
+OUTPUT_VIDEO_PATH = "./outputujivideo.mp4"
+fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+out_video = cv2.VideoWriter(OUTPUT_VIDEO_PATH, fourcc, fps, (width, height))
+
 # ==========================================
 # 4. INISIALISASI MODEL AI & TRACKER
 # ==========================================
-model = YOLO('yolov8m.pt')
+model = YOLO('best.pt')
 # Setup Tracker AI (wajib ada agar sistem ingat kendaraan dan ngitung kecepatan)
 tracker = sv.ByteTrack(track_activation_threshold=0.25) 
 
@@ -100,7 +105,7 @@ label_annotator = sv.LabelAnnotator(text_thickness=1, text_scale=0.5)
 line1_annotator = sv.LineZoneAnnotator(thickness=2, text_thickness=1, color=sv.Color.GREEN)
 line2_annotator = sv.LineZoneAnnotator(thickness=2, text_thickness=1, color=sv.Color.RED)
 
-CLASS_NAMES = {2: "Mobil", 3: "Motor", 5: "Bus", 7: "Truk"}
+CLASS_NAMES = {0: "Orang", 1: "Mobil", 2: "Motor", 3: "Bus", 4: "Truk"}
 
 # Data Ingatan Kendaraan
 timestamp_line1 = {}
@@ -131,8 +136,8 @@ while cap.isOpened():
     results = model(frame, conf=0.30, verbose=False)[0]
     detections = sv.Detections.from_ultralytics(results)
     
-    # Filter hanya kendaraan (COCO classes: 2, 3, 5, 7)
-    detections = detections[np.isin(detections.class_id, [2, 3, 5, 7])]
+    # Filter hanya kendaraan (best.pt: Car=1, Motorcycle=2, Bus=3, Truck=4; Person=0 dilewati)
+    detections = detections[np.isin(detections.class_id, [1, 2, 3, 4])]
     detections = tracker.update_with_detections(detections)
 
     # Cek objek menabrak garis (Masuk / Keluar)
@@ -226,6 +231,7 @@ while cap.isOpened():
     cv2.putText(annotated, f"3. Status Kemacetan : {val_macet}", (35, 165), cv2.FONT_HERSHEY_SIMPLEX, 0.5, c_macet, 2)
 
     cv2.imshow(window_name, annotated)
+    out_video.write(annotated)
 
     # ==========================================
     # CLEANUP MEMORY (Anti RAM jebol jalan 24/7)
@@ -252,5 +258,7 @@ while cap.isOpened():
     frame_idx += 1
 
 cap.release()
+out_video.release()
 cv2.destroyAllWindows()
+print(f"✅ Video hasil tersimpan di: {OUTPUT_VIDEO_PATH}")
 print("🛑 Selesai.")
