@@ -49,6 +49,42 @@ class TestBoxPersistence(unittest.TestCase):
         hasil = bp.update(sv.Detections.empty(), 1)
         self.assertAlmostEqual(hasil.confidence[0], 0.4)
 
+    def test_ghost_suppressed_by_iou_same_class(self):
+        bp = BoxPersistence(grace_frames=10, min_detections=1)
+        # tid=1 terdeteksi, lalu hilang (ghost)
+        bp.update(make_det(100, 100, 160, 140, 1), 0)
+        bp.update(make_det(102, 100, 162, 140, 1), 1)
+        # frame 2: deteksi hilang -> ghost tid=1 muncul
+        hasil = bp.update(sv.Detections.empty(), 2)
+        self.assertEqual(len(hasil), 1)
+        self.assertEqual(int(hasil.tracker_id[0]), 1)
+        # frame 3: ByteTrack assign ID BARU (tid=2) di posisi overlap (class sama)
+        # Ghost tid=1 harus di-suppress karena IoU > 0.5
+        hasil = bp.update(make_det(103, 100, 163, 140, 2), 3)
+        self.assertEqual(len(hasil), 1)
+        self.assertEqual(int(hasil.tracker_id[0]), 2)
+
+    def test_ghost_not_suppressed_different_class(self):
+        bp = BoxPersistence(grace_frames=10, min_detections=1)
+        # tid=1, class_id=2 (Motor) terdeteksi, lalu hilang
+        d1 = sv.Detections(
+            xyxy=np.array([[100, 100, 160, 140]], dtype=float),
+            class_id=np.array([2]), confidence=np.array([0.9]),
+            tracker_id=np.array([1], dtype=int),
+        )
+        bp.update(d1, 0)
+        bp.update(d1, 1)
+        bp.update(sv.Detections.empty(), 2)  # ghost tid=1
+        # frame 3: ByteTrack assign tid=2, class_id=1 (Mobil), posisi overlap
+        d2 = sv.Detections(
+            xyxy=np.array([[103, 100, 163, 140]], dtype=float),
+            class_id=np.array([1]), confidence=np.array([0.9]),
+            tracker_id=np.array([2], dtype=int),
+        )
+        hasil = bp.update(d2, 3)
+        # class beda -> ghost 1 TIDAK di-suppress
+        self.assertEqual(len(hasil), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

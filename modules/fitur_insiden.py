@@ -1,7 +1,5 @@
-# fitur_insiden.py
 import numpy as np
 from collections import deque
-
 
 def _iou(a, b):
     """Intersection over Union dua box xyxy."""
@@ -21,12 +19,10 @@ def _iou(a, b):
 class IncidentDetector:
     """Deteksi pola anomali yang mengindikasikan potensi insiden lalu lintas.
 
-    Menggunakan hasil detection+tracking yang sudah ada (tanpa inferensi tambahan):
+    Menggunakan hasil detection+tracking yang sudah ada:
       1. "Kendaraan Berhenti"   : track tidak bergerak > durasi_berhenti_detik.
       2. "Pengereman Mendadak"  : kecepatan turun drastis dalam window singkat.
       3. "Potensi Tabrakan"     : dua track aktif tumpang tindih (IoU) saat berhenti.
-
-    Alert dibatasi cooldown per (tid, jenis) agar tidak spam.
     """
 
     TIPE_BERHENTI = "Kendaraan Berhenti"
@@ -43,29 +39,46 @@ class IncidentDetector:
         self.cooldown_detik = cfg.get("cooldown_detik", 30.0)
         self.min_seen_frames = int(cfg.get("min_seen_frames", 3))
 
-        self._state = {}     # tid -> {"pos": (x, y), "t": t, "stopped_since": t|None}
-        self._hist = {}      # tid -> deque kecepatan px/detik
-        self._last_event = {}  # (tid, tipe) -> t
-        self._stopped = {}   # tid -> True/False (status berhenti saat ini)
-        self._stopped_since = {}  # tid -> waktu mulai berhenti
-        self._seen = {}      # tid -> jumlah frame terlihat (anti artifact tracker)
+        # Buffer "Mesin Waktu" untuk menyimpan histori koordinat & frame sebelum benturan
+        self.buffer_size = int(cfg.get("buffer_size", 30))
+        self._frame_buffer = {}  # frame_idx -> frame
+        self._box_history = {}   # tid -> list of (frame_idx, box)
 
-    def update(self, detections, t_sekarang):
-        """Proses satu frame. Returns list event dict {tipe, tid, confidence, t}."""
+        self._state = {}         # tid -> {"pos": (x, y), "t": t}
+        self._hist = {}          # tid -> deque kecepatan px/detik
+        self._last_event = {}    # (tid, tipe) -> t
+        self._stopped = {}       # tid -> True/False
+        self._stopped_since = {} # tid -> waktu mulai berhenti
+        self._seen = {}          # tid -> jumlah frame terlihat
+
+    def update(self, detections, t_sekarang, frame=None, frame_idx=0):
+        """Proses satu frame. Returns list event dict."""
         events = []
         n = len(detections)
-        if n == 0:
-            return events
-        if detections.tracker_id is None:
+
+        # Update Mesin Waktu jika frame diberikan
+        if frame is not None:
+            self._frame_buffer[frame_idx] = frame.copy()
+            if frame_idx - self.buffer_size in self._frame_buffer:
+                del self._frame_buffer[frame_idx - self.buffer_size]
+
+        if n == 0 or detections.tracker_id is None:
             return events
 
         tid_to_idx = {}
         for i, (tid, xyxy) in enumerate(zip(detections.tracker_id, detections.xyxy)):
             if tid is None:
                 continue
-            tid_to_idx[int(tid)] = (i, xyxy)
+            tid = int(tid)
+            tid_to_idx[tid] = (i, xyxy)
 
-        self._deteksi_tabrakan(tid_to_idx, t_sekarang, events)
+            # Catat histori posisi per ID untuk fitur Mesin Waktu
+            hist_box = self._box_history.setdefault(tid, [])
+            hist_box.append((frame_idx, xyxy.copy()))
+            if len(hist_box) > self.buffer_size:
+                hist_box.pop(0)
+
+        self._deteksi_tabrakan(tid_to_idx, t_sekarang, events, frame_idx)
         self._update_gerak(detections, t_sekarang, events)
         return events
 
@@ -78,7 +91,6 @@ class IncidentDetector:
             cukup_umur = self._seen[tid] >= self.min_seen_frames
 
             center = ((xyxy[0] + xyxy[2]) / 2.0, (xyxy[1] + xyxy[3]) / 2.0)
-
             prev = self._state.get(tid)
             self._state[tid] = {"pos": center, "t": t_sekarang}
 
@@ -104,7 +116,7 @@ class IncidentDetector:
             else:
                 self._stopped[tid] = False
 
-            # 2. Pengereman mendadak (sudah bergerak -> tiba-tiba berhenti/sangat lambat)
+            # 2. Pengereman mendadak
             if cukup_umur and len(hist) >= self.frame_hard_brake and self._stopped.get(tid, False):
                 vals = list(hist)
                 awal = np.mean(vals[: max(2, self.frame_hard_brake // 2)])
@@ -113,12 +125,11 @@ class IncidentDetector:
                     conf = min(0.9, 0.5 + (awal - akhir) / max(awal, 1.0) * 0.3)
                     self._emit(events, tid, self.TIPE_HARD_BRAKE, t_sekarang, conf)
 
-    def _deteksi_tabrakan(self, tid_to_idx, t_sekarang, events):
+    def _deteksi_tabrakan(self, tid_to_idx, t_sekarang, events, frame_idx):
         tids = list(tid_to_idx.keys())
         for i in range(len(tids)):
             for j in range(i + 1, len(tids)):
                 tid_a, tid_b = tids[i], tids[j]
-                # Abaikan pasangan track yang masih baru (artifact split tracking)
                 if self._seen.get(tid_a, 0) < self.min_seen_frames or \
                         self._seen.get(tid_b, 0) < self.min_seen_frames:
                     continue
@@ -127,20 +138,44 @@ class IncidentDetector:
                 iou = _iou(box_a, box_b)
                 if iou < self.ambang_iou_tabrakan:
                     continue
-                # Potensi tabrakan: minimal salah satu kendaraan sedang berhenti/sangat lambat
+
                 a_stop = self._stopped.get(tid_a, False)
                 b_stop = self._stopped.get(tid_b, False)
                 if not (a_stop or b_stop):
                     continue
+
                 conf = min(0.9, 0.5 + iou)
                 for tid in (tid_a, tid_b):
-                    self._emit(events, tid, self.TIPE_TABRAKAN, t_sekarang, conf)
+                    # Ambil snapshot histori sebelum tabrakan jika ada
+                    pre_crash_crop = self._get_pre_crash_crop(tid)
+                    self._emit(events, tid, self.TIPE_TABRAKAN, t_sekarang, conf, pre_crash_crop)
 
-    def _emit(self, events, tid, tipe, t_sekarang, conf):
+    def _get_pre_crash_crop(self, tid, padding=30):
+        """Mengambil gambar crop kendaraan dari masa lalu (sebelum benturan)."""
+        hist = self._box_history.get(tid)
+        if not hist:
+            return None
+        oldest_frame_idx, oldest_box = hist[0]
+        if oldest_frame_idx in self._frame_buffer:
+            frame_lama = self._frame_buffer[oldest_frame_idx]
+            h, w = frame_lama.shape[:2]
+            x1, y1, x2, y2 = map(int, oldest_box)
+            x1 = max(0, x1 - padding)
+            y1 = max(0, y1 - padding)
+            x2 = min(w, x2 + padding)
+            y2 = min(h, y2 + padding)
+            if x2 > x1 and y2 > y1:
+                return frame_lama[y1:y2, x1:x2]
+        return None
+
+    def _emit(self, events, tid, tipe, t_sekarang, conf, crop_image=None):
         key = (tid, tipe)
         if t_sekarang - self._last_event.get(key, -1e9) >= self.cooldown_detik:
             self._last_event[key] = t_sekarang
-            events.append({"tipe": tipe, "tid": tid, "confidence": conf, "t": t_sekarang})
+            ev = {"tipe": tipe, "tid": tid, "confidence": conf, "t": t_sekarang}
+            if crop_image is not None:
+                ev["crop_image"] = crop_image
+            events.append(ev)
 
     def bersihkan_memori(self, t_sekarang, timeout=20.0):
         stale = [tid for tid, st in self._state.items() if t_sekarang - st["t"] > timeout]
@@ -150,6 +185,7 @@ class IncidentDetector:
             self._stopped.pop(tid, None)
             self._stopped_since.pop(tid, None)
             self._seen.pop(tid, None)
+            self._box_history.pop(tid, None)
         stale_ev = [k for k, t in self._last_event.items() if t_sekarang - t > timeout]
         for k in stale_ev:
             del self._last_event[k]

@@ -7,7 +7,7 @@ import numpy as np
 from modules.fitur_anpr import ANPRReader
 
 CFG = {"min_conf": 0.3, "cooldown_detik": 60.0, "min_w_plat": 40, "min_h_plat": 14,
-       "backend": "auto"}
+       "backend": "auto", "model_path": "./models/best_plat.pt", "model_conf": 0.25}
 
 
 def buat_gambar_dengan_plat():

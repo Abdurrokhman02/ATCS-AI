@@ -2,9 +2,15 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
+from anpr.cnn_model import CNN_Model
 
 
 class ANPRReader:
+    def _lazy_cnn(self):
+        if self._cnn_model is None:
+            self._cnn_model = CNN_Model()
+            self._cnn_model.model.load_weights("./anpr/weights/weight.h5")
+
     def __init__(self, cfg):
         self.min_conf = cfg.get("min_conf", 0.3)
         self.cooldown_detik = cfg.get("cooldown_detik", 60.0)
@@ -16,7 +22,11 @@ class ANPRReader:
         self._model = None
         self._reader = None
         self._backend = None
+        self._cnn_model = None
         self._last_read = {}
+        
+        # Pre-load CNN model
+        self._lazy_cnn()
 
     def _lazy_model(self):
         if self._model is None:
@@ -66,6 +76,7 @@ class ANPRReader:
                 pass
         return "", 0.0
 
+    @staticmethod
     @staticmethod
     def _bersihkan_plat(teks):
         return "".join(ch for ch in str(teks).upper() if ch.isalnum())
@@ -145,3 +156,15 @@ class ANPRReader:
 
     def baca_plat(self, crop):
         return self.run_anpr_on_event(crop)
+
+    def bersihkan_memori(self, t_sekarang, timeout=120.0):
+        """
+        Mencegah memory leak dengan menghapus riwayat pembacaan plat 
+        untuk tracker_id kendaraan yang sudah lama lewat (> 120 detik).
+        """
+        stale = [tid for tid, t_terakhir in self._last_read.items() 
+                 if t_sekarang - t_terakhir > timeout]
+        for tid in stale:
+            del self._last_read[tid]
+            self.best_frame_selector.clear(tid)
+            self.temporal_aggregator.clear(tid)

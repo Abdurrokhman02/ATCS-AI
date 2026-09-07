@@ -91,7 +91,7 @@ def main():
     garis1_y = int(height * GARIS["garis1_y_frac"])
     garis2_y = int(height * GARIS["garis2_y_frac"])
     LINE1 = sv.LineZone(start=sv.Point(0, garis1_y), end=sv.Point(width, garis1_y))
-    LINE2 = sv.LineZone(start=sv.Point(0, garis2_y), end=sv.Point(width, garis2_y))
+    LINE2 = sv.LineZone(start=sv.Point(width, garis2_y), end=sv.Point(0, garis2_y))
 
     MAX_ROI = np.array([[0, garis1_y], [width, garis1_y], [width, garis2_y], [0, garis2_y]])
     try:
@@ -101,11 +101,6 @@ def main():
 
     # ---------- AI & TRACKER ----------
     model = YOLO(args.model)
-    tracker = sv.ByteTrack(
-        track_activation_threshold=TRACKER_CONFIG["track_activation_threshold"],
-        minimum_matching_threshold=TRACKER_CONFIG["minimum_matching_threshold"],
-        lost_track_buffer=TRACKER_CONFIG["lost_track_buffer"],
-    )
     smoother = sv.DetectionsSmoother(length=SMOOTHER_CONFIG["length"])
     box_persist = BoxPersistence(
         grace_frames=SMOOTHER_CONFIG["persist_grace_frames"],
@@ -113,13 +108,16 @@ def main():
         min_detections=SMOOTHER_CONFIG["persist_min_detections"],
     )
 
+    # For diagnostic tracking of IDs across frames
+    prev_tracker_ids = set()
+
     box_annotator = sv.BoxAnnotator(thickness=2)
     label_annotator = sv.LabelAnnotator(text_thickness=1, text_scale=0.5)
     l1_annotator = sv.LineZoneAnnotator(thickness=2, color=sv.Color.GREEN)
     l2_annotator = sv.LineZoneAnnotator(thickness=2, color=sv.Color.RED)
 
     # ---------- STATE MODUL ----------
-    counter = VehicleCounter()
+    counter = VehicleCounter(arah_lalu_lintas=CAM_CONFIG["arah_lalu_lintas"])
     wrongway = WrongWayDetector(
         arah_lalu_lintas=CAM_CONFIG["arah_lalu_lintas"],
         min_kecepatan_px=LAWAN_ARAH_CONFIG["min_kecepatan_px"],
@@ -134,6 +132,7 @@ def main():
 
     speeds_kmh = []
     recent_events = deque(maxlen=4)
+    total_event_count = 0
     frame_idx = 0
     t_mulai = cv2.getTickCount()
 
@@ -160,23 +159,71 @@ def main():
             break
         if args.max_frames and frame_idx >= args.max_frames:
             break
-        t_sekarang = frame_idx / fps
+            
+        # ---> PERUBAHAN DI SINI <---
+        # Jika argumen source adalah file video (mengandung .mp4/.avi/dll), pakai simulasi waktu frame.
+        # Jika berupa RTSP atau angka webcam (0, 1), pakai waktu nyata (time.time()).
+        if any(ext in args.source.lower() for ext in [".mp4", ".avi", ".mkv", ".mov"]):
+            t_sekarang = frame_idx / fps
+        else:
+            import time
+            # Gunakan waktu relatif sejak program jalan atau timestamp aktual
+            if 'waktu_mulai_realtime' not in locals():
+                waktu_mulai_realtime = time.time()
+            t_sekarang = time.time() - waktu_mulai_realtime
+            
+        # 1. AI Inference (deteksi + tracking) - Native Ultralytics BoT-SORT
+        # Single inference call with integrated tracking (no separate YOLO + ByteTrack)
+        results = model.track(
+            source=frame,
+            conf=args.conf,
+            persist=True,
+            tracker="botsort.yaml",
+            classes=[1, 2, 3, 4],
+            verbose=False,
+        )[0]
 
-        # 1. AI Inference (deteksi + tracking)
-        results = model(frame, conf=args.conf, verbose=False)[0]
         detections = sv.Detections.from_ultralytics(results)
-        detections = detections[np.isin(detections.class_id, [1, 2, 3, 4])]
-        detections = tracker.update_with_detections(detections)
 
-        # 2. Trigger Garis Virtual
-        c1_in, c1_out = LINE1.trigger(detections=detections)
-        c2_in, c2_out = LINE2.trigger(detections=detections)
+        # Ensure tracker_id is populated from BoT-SORT (boxes.id)
+        if detections.tracker_id is None and hasattr(results.boxes, 'id') and results.boxes.id is not None:
+            detections.tracker_id = results.boxes.id.cpu().numpy().astype(int)
+
+        n_botsort = len(detections)
+
+        # Diagnostics: track ID changes
+        curr_tracker_ids = set(detections.tracker_id) if detections.tracker_id is not None else set()
+        new_ids = curr_tracker_ids - prev_tracker_ids
+        lost_ids = prev_tracker_ids - curr_tracker_ids
+        prev_tracker_ids = curr_tracker_ids
+
+        # Persistence output (for counting & line crossing)
+        detections_persist = box_persist.update(detections, frame_idx)
+        n_persist_out = len(detections_persist)
+
+        # Smoother output (for rendering & other analytics)
+        if len(detections_persist):
+            detections_smooth = smoother.update_with_detections(detections_persist)
+        else:
+            detections_smooth = detections_persist
+        n_smooth_out = len(detections_smooth)
+
+        # For backward compatibility with existing diagnostic variable names
+        n_byte_track = n_botsort
+        ghost_count = max(0, n_persist_out - n_botsort)
+
+        # For diagnostic output - use accurate labels
+        n_tracked = n_botsort  # BoT-SORT tracked detections
+
+        # 2. Trigger Garis Virtual - USE PERSISTENCE OUTPUT (non-smoothed) for accurate crossing detection
+        c1_in, c1_out = LINE1.trigger(detections=detections_persist)
+        c2_in, c2_out = LINE2.trigger(detections=detections_persist)
         crossed_l1 = c1_in | c1_out
         crossed_l2 = c2_in | c2_out
 
-        # 3. Logika per kendaraan (kecepatan dulu, lalu counting)
-        if detections.tracker_id is not None:
-            for i, (tid, cid) in enumerate(zip(detections.tracker_id, detections.class_id)):
+        # 3. Logika per kendaraan - COUNTING uses persistence output
+        if detections_persist.tracker_id is not None:
+            for i, (tid, cid) in enumerate(zip(detections_persist.tracker_id, detections_persist.class_id)):
                 hitung_kecepatan_kendaraan(
                     tid, crossed_l1[i], crossed_l2[i], t_sekarang,
                     counter.timestamp_l1, counter.timestamp_l2,
@@ -184,16 +231,16 @@ def main():
                 )
                 counter.update(tid, cid, c1_in[i], c1_out[i], c2_in[i], c2_out[i], t_sekarang)
 
-        # 4. Modul AI lanjutan (reuse hasil deteksi+tracking)
-        wrong_mask, ww_events = wrongway.update(detections, t_sekarang)
-        incident_events = incident.update(detections, t_sekarang)
+        # 4. Modul AI lanjutan (reuse SMOOTHED detections for rendering & other analytics)
+        wrong_mask, ww_events = wrongway.update(detections_smooth, t_sekarang)
+        incident_events = incident.update(detections_persist, t_sekarang, frame=frame, frame_idx=frame_idx)
 
         total_akumulasi = counter.get_total_akumulasi()
         in_count, out_count = counter.get_in_out()
-        kendaraan_live = len(detections)
+        kendaraan_live = len(detections_smooth)
         avg_speed = get_rata_rata_kecepatan(speeds_kmh)
 
-        in_roi_mask = roi_zone.trigger(detections=detections)
+        in_roi_mask = roi_zone.trigger(detections=detections_smooth)
         jumlah_di_roi = int(in_roi_mask.sum()) if len(in_roi_mask) else 0
         status_macet, color_macet = cek_status_kemacetan(
             jumlah_di_roi, CAM_CONFIG["panjang_segmen_meter"],
@@ -208,36 +255,36 @@ def main():
         # 5. Event logging + ANPR trigger
         if FLAGS["LAWAN_ARAH"]:
             for ev in ww_events:
-                box = find_box_by_tid(detections, ev["tid"])
+                box = find_box_by_tid(detections_smooth, ev["tid"])
                 snap = _crop_by_box(frame, box)
                 metadata = {"tracker_id": ev["tid"]}
+                total_event_count += 1
                 metadata.update(_proses_anpr(anpr, ev["tid"], snap, t_sekarang, "LAWAN_ARAH", recent_events))
                 logger.log_event("LAWAN_ARAH", ev["confidence"], snap, metadata=metadata)
                 recent_events.append(f"LAWAN ARAH #{ev['tid']}")
 
         if FLAGS["INSIDEN"]:
             for ev in incident_events:
-                box = find_box_by_tid(detections, ev["tid"])
+                box = find_box_by_tid(detections_smooth, ev["tid"])
                 snap = _crop_by_box(frame, box)
                 metadata = {"tracker_id": ev["tid"]}
+                total_event_count += 1
                 metadata.update(_proses_anpr(anpr, ev["tid"], snap, t_sekarang, ev["tipe"], recent_events))
                 logger.log_event(ev["tipe"], ev["confidence"], snap, metadata=metadata)
                 recent_events.append(f"{ev['tipe']} #{ev['tid']}")
 
-        # 6. RENDER
-        annotated = frame.copy()
+        # 6. RENDER - use smoothed detections for visual stability
+        annotated = frame.copy()    
 
         if FLAGS["DETEKSI"]:
-            deteksi_visual = box_persist.update(detections, frame_idx)
-            if len(deteksi_visual):
-                deteksi_visual = smoother.update_with_detections(deteksi_visual)
-            annotated = box_annotator.annotate(scene=annotated, detections=deteksi_visual)
-            labels = [f"#{tid} {CLASS_NAMES.get(cid, '?')}"
-                      for tid, cid in zip(deteksi_visual.tracker_id, deteksi_visual.class_id)]
-            annotated = label_annotator.annotate(scene=annotated, detections=deteksi_visual, labels=labels)
+            if len(detections_smooth):
+                annotated = box_annotator.annotate(scene=annotated, detections=detections_smooth)
+                labels = [f"#{tid} {CLASS_NAMES.get(cid, '?')}"
+                          for tid, cid in zip(detections_smooth.tracker_id, detections_smooth.class_id)]
+                annotated = label_annotator.annotate(scene=annotated, detections=detections_smooth, labels=labels)
 
         if FLAGS["LAWAN_ARAH"]:
-            annotated = _render_wrong_way(annotated, detections, wrong_mask)
+            annotated = _render_wrong_way(annotated, detections_smooth, wrong_mask)
 
         if FLAGS["COUNTING"]:
             try:
@@ -254,17 +301,34 @@ def main():
             out_writer.write(annotated)
 
         # 7. Housekeeping
+        # 7. Housekeeping
         if frame_idx % (int(fps) * 5) == 0:
             counter.bersihkan_memori(t_sekarang)
             wrongway.bersihkan_memori(t_sekarang)
             incident.bersihkan_memori(t_sekarang)
+            
+            # ---> TAMBAHKAN BARIS INI <---
+            if FLAGS["ANPR"] and anpr is not None:
+                anpr.bersihkan_memori(t_sekarang)
+                
             if len(speeds_kmh) > 200:
                 del speeds_kmh[:-100]
 
         if headless:
             if frame_idx % max(1, int(fps * 2)) == 0:
-                print(f"[{frame_idx:6d}] live={kendaraan_live:2d} total={total_akumulasi:4d} "
-                      f"avg={avg_speed:5.1f} km/h {status_macet:6s} events={len(recent_events)}")
+                ids_str = ",".join(map(str, sorted(curr_tracker_ids))) if curr_tracker_ids else "-"
+                new_str = ",".join(map(str, sorted(new_ids))) if new_ids else "-"
+                lost_str = ",".join(map(str, sorted(lost_ids))) if lost_ids else "-"
+                print(f"[{frame_idx:6d}] t={t_sekarang:5.1f}s "
+                      f"tracked={n_tracked:2d} persist={n_persist_out:2d} smooth={n_smooth_out:2d} "
+                      f"ids=[{ids_str}] new=[{new_str}] lost=[{lost_str}] "
+                      f"live={kendaraan_live:2d} total={total_akumulasi:4d} "
+                      f"avg={avg_speed:5.1f} km/h {status_macet:6s} events={total_event_count}")
+            if frame_idx % max(1, int(fps * 10)) == 0:
+                c1 = int(crossed_l1.sum()) if len(crossed_l1) else 0
+                c2 = int(crossed_l2.sum()) if len(crossed_l2) else 0
+                print(f"  DIAG: cross_L1={c1} cross_L2={c2} "
+                      f"speeds_sample={len(speeds_kmh)} roi_count={jumlah_di_roi}")
         else:
             cv2.imshow("CCTV Traffic Monitor", annotated)
             key = cv2.waitKey(1) & 0xFF
@@ -306,7 +370,7 @@ def main():
     print(f"  - Rerata seluruh sampel : {rata_kecepatan_keseluruhan:.1f} km/jam")
     print(f"Status Kemacetan  : {status_macet} (density {jumlah_di_roi} kend. di ROI)")
     print(f"  Distribusi      : {kongesti_distribusi}")
-    print(f"Event dicatat     : {len(recent_events)} (lihat {OUTPUT_CONFIG['event_dir']})")
+    print(f"Event dicatat     : {total_event_count} (lihat {OUTPUT_CONFIG['event_dir']})")
     if args.output_video:
         print(f"Video output      : {args.output_video}")
     print("===========================================")
@@ -326,7 +390,7 @@ def main():
             "rata_rata_kecepatan_keseluruhan_kmh": round(rata_kecepatan_keseluruhan, 2),
             "status_kemacetan_akhir": status_macet,
             "distribusi_kemacetan": kongesti_distribusi,
-            "event_count": len(recent_events),
+            "event_count": total_event_count,
         }
         os.makedirs(os.path.dirname(os.path.abspath(args.output_report)), exist_ok=True)
         import json

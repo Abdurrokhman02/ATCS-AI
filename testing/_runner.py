@@ -14,7 +14,7 @@ def parse_args(default_source=None, require_source=False):
     p = argparse.ArgumentParser()
     p.add_argument("--source", default=default_source)
     p.add_argument("--max-frames", type=int, default=int(os.getenv("MAX_FRAMES", "300")))
-    p.add_argument("--model", default=os.getenv("MODEL_PATH", "./best_kendaraan.pt"))
+    p.add_argument("--model", default=os.getenv("MODEL_PATH", "./models/best_kendaraan.pt"))
     p.add_argument("--conf", default=os.getenv("MODEL_CONF", "0.25"))
     p.add_argument("--output-dir", default=os.getenv("TEST_OUTPUT_DIR", "./output/testing"))
     p.add_argument("--show", action="store_true")

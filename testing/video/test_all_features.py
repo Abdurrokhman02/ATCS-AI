@@ -6,7 +6,7 @@ from _runner import parse_args, run
 
 
 def main():
-    args = parse_args(default_source="./samples/sampleuji2.mp4")
+    args = parse_args(default_source="./samples/sampel 1.mp4")
     for feature in ("DETEKSI", "COUNTING", "KECEPATAN", "KEMACETAN", "LAWAN_ARAH", "INSIDEN", "ANPR"):
         run(feature, args.source, args.max_frames, args.model, args.conf, args.output_dir, args.show)
 

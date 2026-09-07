@@ -6,23 +6,23 @@ import numpy as np
 # ==========================================
 CAM_CONFIG = {
     "camera_id": "CCTV_Jalan_01",
-    "video_source": "./samples/samplesiang.mp4", #ganti ke rtsp nanti
-    "jarak_garis_meter": 20.0,
+    "video_source": "./samples/sampel 1.mp4", #ganti ke rtsp nanti
+    "jarak_garis_meter": 5.5,
     "free_flow_speed_kmh": 40.0,
     "panjang_segmen_meter": 50.0,
     "jumlah_lajur": 2,
     # Arah normal arus lalu lintas pada frame kamera:
     #   "atas_ke_bawah" -> kendaraan bergerak dari atas layar ke bawah
     #   "bawah_ke_atas" -> kendaraan bergerak dari bawah layar ke atas
-    "arah_lalu_lintas": "atas_ke_bawah"
+    "arah_lalu_lintas": "bawah_ke_atas"
 }
 
 # ==========================================
 # MODEL DETEKSI
 # ==========================================
 MODEL_CONFIG = {
-    "path": "./best_kendaraan.pt",
-    "conf": 0.25   # threshold moderat: lebih sensitif drpd 0.30, tidak senoisy 0.20
+    "path": "models/best_kendaraan2.pt",
+    "conf": 0.5   # threshold moderat: lebih sensitif drpd 0.30, tidak senoisy 0.20
 }
 
 # ==========================================
@@ -30,22 +30,22 @@ MODEL_CONFIG = {
 # ==========================================
 TRACKER_CONFIG = {
     # aktivasi track baru jika confidence >= nilai ini (harus <= conf model)
-    "track_activation_threshold": 0.15,
+    "track_activation_threshold": 0.25,
     # IoU matching lebih longgar -> kendaraan kecil/cepat tidak ganti ID.
     # Catatan: 0.3 lebih stabil utk kendaraan kecil di malam hari, namun ada
     # risiko ID melebur utk kendaraan berdampingan; sesuaikan per kamera.
     "minimum_matching_threshold": 0.3,
     # jumlah frame track "hilang" tetap disimpan sebelum dibuang (~3 detik di 30fps)
-    "lost_track_buffer": 90,
+    "lost_track_buffer": 45,
 }
 
 # ==========================================
 # STABILISASI BOX (DetectionsSmoother + BoxPersistence)
 # ==========================================
 SMOOTHER_CONFIG = {
-    "length": 5,                # rata-rata posisi box dalam N frame terakhir (kurangi jitter)
-    "persist_grace_frames": 18, # tahan box terakhir selama N frame saat deteksi sempat hilang (~0.6 dtk)
-    "persist_decay": 0.6,       # faktor penurunan confidence box persisten
+    "length": 8,                # rata-rata posisi box dalam N frame terakhir (kurangi jitter)
+    "persist_grace_frames": 25, # tahan box terakhir selama N frame saat deteksi sempat hilang (~0.6 dtk)
+    "persist_decay": 0.7,       # faktor penurunan confidence box persisten
     "persist_min_detections": 2 # box baru dipersistenkan setelah terdeteksi >= N frame (anti hantu)
 }
 
@@ -53,8 +53,8 @@ SMOOTHER_CONFIG = {
 # GARIS VIRTUAL (Counting Line) otomatis relatif thd tinggi frame
 # ==========================================
 GARIS = {
-    "garis1_y_frac": 0.30,
-    "garis2_y_frac": 0.75
+    "garis1_y_frac": 0.60,
+    "garis2_y_frac": 0.45
 }
 
 # ==========================================
@@ -87,7 +87,8 @@ INSIDEN_CONFIG = {
     "frame_hard_brake": 5,           # lebar window pengereman mendadak
     "ambang_iou_tabrakan": 0.25,     # IoU minimal antar box utk "potensi tabrakan"
     "min_seen_frames": 3,            # track harus terlihat N frame agar event dipertimbangkan
-    "cooldown_detik": 30.0
+    "cooldown_detik": 30.0,
+    "buffer_size": 90                # buffer frame history untuk time machine snapshot (~3.6s @25fps)
 }
 
 # ==========================================
@@ -95,7 +96,7 @@ INSIDEN_CONFIG = {
 # ==========================================
 ANPR_CONFIG = {
     "enabled": True,
-    "model_path": "./best_plat.pt",
+    "model_path": "./models/best_plat.pt",
     "model_conf": 0.25,
     "backend": "easyocr",
     "min_conf": 0.3,
@@ -135,4 +136,4 @@ BUTTONS = {
     "ANPR": (910, 15, 1040, 45)
 }
 
-CLASS_NAMES = {0: "Orang", 1: "Mobil", 2: "Motor", 3: "Bus", 4: "Truk"}
+CLASS_NAMES = {0: "Orang", 1: "Motor", 2: "Mobil", 3: "Bus", 4: "Truk"}

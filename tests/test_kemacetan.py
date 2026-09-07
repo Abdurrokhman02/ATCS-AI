@@ -29,6 +29,18 @@ class TestKemacetan(unittest.TestCase):
         status, _ = cek_status_kemacetan(6, PANJANG, LAJUR, 35.0, 40.0, CFG)
         self.assertEqual(status, LANCAR)
 
+    def test_lancar_speed_sangat_tinggi_moderate_density(self):
+        # density 20 (moderate, < 25) + sangat tinggi (ratio > 1.0, speed > free_flow) -> LANCAR
+        # speed 180 km/h, free_flow 40 -> ratio 4.5 > 1.0, density 20 < 25
+        status, _ = cek_status_kemacetan(20, PANJANG, LAJUR, 180.0, 40.0, CFG)
+        self.assertEqual(status, LANCAR)
+        # density 24 (di batas batas_padat) + very high speed -> LANCAR
+        status, _ = cek_status_kemacetan(24, PANJANG, LAJUR, 100.0, 40.0, CFG)
+        self.assertEqual(status, LANCAR)
+        # density 25 (tepat batas_padat) + very high speed -> MACET (density >= 25)
+        status, _ = cek_status_kemacetan(25, PANJANG, LAJUR, 180.0, 40.0, CFG)
+        self.assertEqual(status, MACET)
+
     def test_macet_density_tinggi(self):
         # density 25 >= 25 -> MACET walau speed normal
         status, _ = cek_status_kemacetan(25, PANJANG, LAJUR, 35.0, 40.0, CFG)
@@ -50,6 +62,9 @@ class TestKemacetan(unittest.TestCase):
         # density 10, rasio 0.5 (<= 0.55) -> PADAT
         status, _ = cek_status_kemacetan(10, PANJANG, LAJUR, 20.0, 40.0, CFG)
         self.assertEqual(status, PADAT)
+        # density 10, rasio 0.8 (normal, > 0.55 tapi < 1.0) -> LANCAR (density < 12, ratio > 0.55)
+        status, _ = cek_status_kemacetan(10, PANJANG, LAJUR, 32.0, 40.0, CFG)
+        self.assertEqual(status, LANCAR)
 
     def test_hanya_tiga_status(self):
         statuses = set()

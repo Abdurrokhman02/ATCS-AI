@@ -25,12 +25,31 @@ class BoxPersistence:
         self._last = {}      # tid -> [frame_idx, xyxy, class_id, confidence, total_detection]
         self._det_count = {} # tid -> jumlah frame terdeteksi secara nyata
 
+    @staticmethod
+    def _compute_iou(box_a, box_b):
+        """Intersection over Union dua box xyxy."""
+        x1 = max(box_a[0], box_b[0])
+        y1 = max(box_a[1], box_b[1])
+        x2 = min(box_a[2], box_b[2])
+        y2 = min(box_a[3], box_b[3])
+        inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+        if inter <= 0.0:
+            return 0.0
+        area_a = (box_a[2] - box_a[0]) * (box_a[3] - box_a[1])
+        area_b = (box_b[2] - box_b[0]) * (box_b[3] - box_b[1])
+        union = area_a + area_b - inter
+        return inter / union if union > 0 else 0.0
+
     def update(self, detections, frame_idx):
         """Gabungkan deteksi frame ini dengan box persisten track yang hilang.
 
         Hanya track yang telah terdeteksi minimal `min_detections` frame yang
         dipertahankan saat sempat hilang, agar blip deteksi 1-frame (false
         positive malam hari) tidak menjadi "hantu" di layar.
+
+        Ghost suppression: jika box persisten overlap (IoU > 0.5, class sama)
+        dengan live ByteTrack box, ghost dihapus karena kendaraan yang sama
+        sudah dilacak dengan ID baru.
 
         Returns Detections untuk keperluan rendering.
         """
@@ -47,9 +66,20 @@ class BoxPersistence:
         for t, (f, box, cid, conf, _) in self._last.items():
             if t in merged:
                 continue
-            # Pertahankan waktu DETEKSI terakhir (f), jangan refresh ke frame
-            # sekarang, agar box persisten benar-benar hilang setelah grace.
-            if frame_idx - f <= self.grace and self._det_count.get(t, 0) >= self.min_detections:
+            if frame_idx - f > self.grace or self._det_count.get(t, 0) < self.min_detections:
+                continue
+
+            # Ghost suppression: cek overlap dengan live ByteTrack boxes
+            suppressed = False
+            for live_tid, (_, live_box, live_cid, _, _) in current.items():
+                if int(live_cid) != int(cid):
+                    continue
+                iou = self._compute_iou(box, live_box)
+                if iou > 0.5:
+                    suppressed = True
+                    break
+
+            if not suppressed:
                 merged[t] = (f, box, cid, conf * self.decay, self._det_count[t])
 
         # Prune track yang sudah lama hilang

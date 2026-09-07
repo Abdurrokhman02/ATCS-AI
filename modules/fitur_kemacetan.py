@@ -38,11 +38,17 @@ def cek_status_kemacetan(jumlah_di_roi, panjang_segmen_meter, jumlah_lajur,
 
     rasio_kecepatan = avg_speed_kmh / max(free_flow_speed_kmh, 1.0)
 
+    # Kecepatan sangat tinggi (di atas free-flow) + kepadatan tidak ekstrem -> LANCAR
+    if rasio_kecepatan > 1.0 and density < batas_padat:
+        return LANCAR, WARNA_LANCAR
+
     # Kepadatan rendah + kecepatan normal -> LANCAR
     if density < batas_lancar and rasio_kecepatan > rasio_padat:
         return LANCAR, WARNA_LANCAR
+
     # Kepadatan tinggi ATAU kecepatan sangat rendah -> MACET
     if density >= batas_padat or rasio_kecepatan <= rasio_macet:
         return MACET, WARNA_MACET
+
     # Sisanya -> PADAT
     return PADAT, WARNA_PADAT

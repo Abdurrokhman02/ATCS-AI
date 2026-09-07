@@ -6,7 +6,7 @@ from _runner import parse_args, run
 
 
 def main():
-    args = parse_args(default_source="./samples/samplesiang.mp4")
+    args = parse_args(default_source="./samples/sampel 1.mp4")
     run("KEMACETAN", args.source, args.max_frames, args.model, args.conf, args.output_dir, args.show)
 
 
