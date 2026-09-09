@@ -39,7 +39,7 @@ try:
 except TypeError:
     roi_zone = sv.PolygonZone(polygon=MAX_ROI)
 
-model = YOLO('models/best.pt')
+model = YOLO('models/modol.pt')
 tracker = sv.ByteTrack(track_activation_threshold=0.25)
 
 box_annotator = sv.BoxAnnotator(thickness=2)
@@ -69,7 +69,8 @@ while cap.isOpened():
 
     results = model(frame, conf=0.30, verbose=False)[0]
     detections = sv.Detections.from_ultralytics(results)
-    detections = detections[np.isin(detections.class_id, [2, 3, 5, 7])]
+    allowed_class_ids = list(CLASS_NAMES.keys())
+    detections = detections[np.isin(detections.class_id, allowed_class_ids)]
     detections = tracker.update_with_detections(detections)
 
     c1_in, c1_out = LINE1.trigger(detections=detections)

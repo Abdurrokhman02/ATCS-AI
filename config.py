@@ -33,8 +33,7 @@ BUTTONS = {
 }
 
 CLASS_NAMES = {
-    1: "Mobil Pribadi",
-    2: "Sepeda Motor",
-    3: "Bus Pariwisata",
-    4: "Truk Logistik"
+    0: "Mobil",
+    1: "Motor",
+    2: "Truk"
 }
