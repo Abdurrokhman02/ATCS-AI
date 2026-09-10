@@ -6,8 +6,10 @@ env/
 # Model YOLO dan AI (Sangat rawan melebihi 100MB)
 *.pt
 *.onnx
+models/
 
 # Video Sampel & Output
+samples/
 output/
 *.mp4
 *.avi
