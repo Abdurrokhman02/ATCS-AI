@@ -6,12 +6,8 @@ env/
 # Model YOLO dan AI (Sangat rawan melebihi 100MB)
 *.pt
 *.onnx
-models/
-best_kendaraan.pt
-best_plat.pt
 
 # Video Sampel & Output
-samples/
 output/
 *.mp4
 *.avi

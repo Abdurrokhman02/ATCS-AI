@@ -21,7 +21,7 @@ CAM_CONFIG = {
 # MODEL DETEKSI
 # ==========================================
 MODEL_CONFIG = {
-    "path": "models/best_kendaraan2.pt",
+    "path": "models/best modol.pt",
     "conf": 0.5   # threshold moderat: lebih sensitif drpd 0.30, tidak senoisy 0.20
 }
 

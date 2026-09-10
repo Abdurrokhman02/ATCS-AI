@@ -20,7 +20,6 @@ from modules.fitur_kecepatan import hitung_kecepatan_kendaraan, get_rata_rata_ke
 from modules.fitur_kemacetan import cek_status_kemacetan
 from modules.fitur_lawan_arah import WrongWayDetector
 from modules.fitur_insiden import IncidentDetector
-from modules.fitur_anpr import ANPRReader
 from modules.event_logger import EventLogger
 from modules.fitur_stabilisasi import BoxPersistence
 
@@ -47,7 +46,6 @@ def parse_args():
                    help="Path output laporan statistik JSON")
     p.add_argument("--no-lawan-arah", action="store_true", help="Nonaktifkan modul Lawan Arah")
     p.add_argument("--no-insiden", action="store_true", help="Nonaktifkan modul Insiden")
-    p.add_argument("--no-anpr", action="store_true", help="Nonaktifkan modul ANPR")
     return p.parse_args()
 
 
@@ -75,8 +73,9 @@ def main():
         FLAGS["LAWAN_ARAH"] = False
     if args.no_insiden:
         FLAGS["INSIDEN"] = False
-    if args.no_anpr:
-        FLAGS["ANPR"] = False
+
+    FLAGS["ANPR"] = False
+    ANPR_CONFIG["enabled"] = False
 
     # ---------- KAMERA ----------
     cap = cv2.VideoCapture(args.source)
@@ -125,7 +124,7 @@ def main():
         cooldown_detik=LAWAN_ARAH_CONFIG["cooldown_detik"],
     )
     incident = IncidentDetector(INSIDEN_CONFIG)
-    anpr = ANPRReader(ANPR_CONFIG) if ANPR_CONFIG["enabled"] else None
+    anpr = None
     logger = EventLogger(OUTPUT_CONFIG["event_dir"],
                          simpan_snapshot=OUTPUT_CONFIG["simpan_snapshot"],
                          camera_id=CAM_CONFIG["camera_id"])
@@ -259,7 +258,6 @@ def main():
                 snap = _crop_by_box(frame, box)
                 metadata = {"tracker_id": ev["tid"]}
                 total_event_count += 1
-                metadata.update(_proses_anpr(anpr, ev["tid"], snap, t_sekarang, "LAWAN_ARAH", recent_events))
                 logger.log_event("LAWAN_ARAH", ev["confidence"], snap, metadata=metadata)
                 recent_events.append(f"LAWAN ARAH #{ev['tid']}")
 
@@ -269,7 +267,6 @@ def main():
                 snap = _crop_by_box(frame, box)
                 metadata = {"tracker_id": ev["tid"]}
                 total_event_count += 1
-                metadata.update(_proses_anpr(anpr, ev["tid"], snap, t_sekarang, ev["tipe"], recent_events))
                 logger.log_event(ev["tipe"], ev["confidence"], snap, metadata=metadata)
                 recent_events.append(f"{ev['tipe']} #{ev['tid']}")
 
@@ -307,10 +304,6 @@ def main():
             wrongway.bersihkan_memori(t_sekarang)
             incident.bersihkan_memori(t_sekarang)
             
-            # ---> TAMBAHKAN BARIS INI <---
-            if FLAGS["ANPR"] and anpr is not None:
-                anpr.bersihkan_memori(t_sekarang)
-                
             if len(speeds_kmh) > 200:
                 del speeds_kmh[:-100]
 
@@ -346,8 +339,6 @@ def main():
                 FLAGS["LAWAN_ARAH"] = not FLAGS["LAWAN_ARAH"]
             elif key == ord('6'):
                 FLAGS["INSIDEN"] = not FLAGS["INSIDEN"]
-            elif key == ord('7'):
-                FLAGS["ANPR"] = not FLAGS["ANPR"]
 
         frame_idx += 1
 
@@ -414,19 +405,7 @@ def _crop_by_box(frame, box):
 
 
 def _proses_anpr(anpr, tid, vehicle_crop, t_sekarang, trigger, recent_events):
-    if anpr is None or not FLAGS["ANPR"]:
-        return {"plat": "", "backend": None, "anpr_conf": 0.0}
-    hasil = anpr.baca_untuk_kendaraan(tid, vehicle_crop, t_sekarang)
-    if hasil is None:
-        return {"plat": "", "backend": None, "anpr_conf": 0.0}
-    if hasil["plat"]:
-        recent_events.append(f"ANPR {hasil['plat']}")
-    return {
-        "plat": hasil["plat"],
-        "backend": hasil["backend"],
-        "anpr_conf": hasil["conf"],
-        "anpr_trigger": trigger,
-    }
+    return {"plat": "", "backend": None, "anpr_conf": 0.0}
 
 
 def _render_wrong_way(frame, detections, wrong_mask):
