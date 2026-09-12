@@ -1,25 +1,49 @@
-# =========================
-# Python & Environment
-# =========================
-# Cache dan file kompilasi Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Virtual Environment
+# Lingkungan Virtual (Wajib diabaikan, isinya bisa ratusan MB)
 .venv/
 venv/
 env/
 
-# =========================
-# OS / IDE Files (Opsional tapi disarankan)
-# =========================
-.DS_Store
+# Model YOLO dan AI (Sangat rawan melebihi 100MB - gunakan Git LFS atau download script)
+*.pt
+*.onnx
+
+# Video Sampel & Output Video (terlalu besar untuk git)
+samples/
+output/testing/
+output/cnn_test/
+output/debug_plat_crops/
+output/debug_preprocess/
+ouput/debug_segmentation/
+output/events/
+
+
+*.mp4
+*.avi
+*.mkv
+*.mov
+
+# File Cache & Temporary Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Log & Snapshot Event (bisa besar, tidak perlu di-commit)
+*.log
+*.jsonl
+output/events/
+*.jpg
+*.png
+
+# Pengaturan IDE / OS
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
 
-# =========================
-# Hasil kecelakaan raw
-# =========================
-hasil_kecelakaan_raw/
+# OS / Editor temp files
+*~
+*.swp
+*.swo
+
+stuff/
