@@ -6,7 +6,6 @@ env/
 # Model YOLO dan AI (Sangat rawan melebihi 100MB - gunakan Git LFS atau download script)
 *.pt
 *.onnx
-models/
 
 # Video Sampel & Output Video (terlalu besar untuk git)
 samples/
