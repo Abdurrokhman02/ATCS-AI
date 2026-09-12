@@ -57,7 +57,6 @@ def handle_mouse_click(event, x, y, flags_param, param):
             if x1 <= x <= x2 and y1 <= y <= y2:
                 FLAGS[feature_name] = not FLAGS[feature_name]
 
-
 def find_box_by_tid(detections, tid):
     if detections.tracker_id is None:
         return None
