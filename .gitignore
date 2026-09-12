@@ -3,19 +3,25 @@
 venv/
 env/
 
-# Model YOLO dan AI (Sangat rawan melebihi 100MB)
+# Model YOLO dan AI (Sangat rawan melebihi 100MB - gunakan Git LFS atau download script)
 *.pt
 *.onnx
 models/
-best_kendaraan.pt
-best_plat.pt
 
-# Video Sampel & Output
+# Video Sampel & Output Video (terlalu besar untuk git)
 samples/
-output/
+output/testing/
+output/cnn_test/
+output/debug_plat_crops/
+output/debug_preprocess/
+ouput/debug_segmentation/
+output/events/
+
+
 *.mp4
 *.avi
 *.mkv
+*.mov
 
 # File Cache & Temporary Python
 __pycache__/
@@ -23,10 +29,10 @@ __pycache__/
 *$py.class
 .pytest_cache/
 
-# Log, Snapshot Event, & Report
+# Log & Snapshot Event (bisa besar, tidak perlu di-commit)
 *.log
 *.jsonl
-*.json
+output/events/
 *.jpg
 *.png
 
@@ -35,3 +41,10 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+# OS / Editor temp files
+*~
+*.swp
+*.swo
+
+stuff/
